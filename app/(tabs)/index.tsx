@@ -4,7 +4,6 @@ import {
   View,
   Text,
   ScrollView,
-  Switch,
   TouchableOpacity,
   Alert,
 } from 'react-native';
@@ -13,217 +12,248 @@ import { Ionicons } from '@expo/vector-icons';
 import { useColorScheme } from '@/hooks/useColorScheme';
 
 // API URL - replace with your actual server address when needed
-const API_URL = 'http://172.17.79.208:5000';
+const API_URL = 'http://192.168.0.4:5000';
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 
-  // State for device controls
-  const [devices, setDevices] = useState({
-    light: false,
-    thermostat: 21,
-    camera: true,
-    speaker: false,
-    doorLock: true,
+  // State for stepper motor control - updated to match app.py structure
+  const [stepper, setStepper] = useState({
+    running: false,
+    direction: 'CW',
+    rotation: 0,
+    last_command_time: 0,
   });
 
   // State for loading and errors
   const [isLoading, setIsLoading] = useState(false);
 
-  // Fetch initial device states from the server
+  // Fetch initial stepper states from the server
   useEffect(() => {
-    fetchDeviceStates();
+    fetchStepperState();
   }, []);
 
-  // Function to fetch device states from the server
-  const fetchDeviceStates = async () => {
+  // Function to fetch stepper state from the server
+  const fetchStepperState = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch(`${API_URL}/api/devices`);
+      const response = await fetch(`${API_URL}/api/stepper`);
 
       if (!response.ok) {
-        throw new Error('Failed to fetch device states');
+        throw new Error('Failed to fetch stepper state');
       }
 
       const data = await response.json();
-      setDevices(data);
+      setStepper(data.stepper);
     } catch (error) {
-      console.error('Error fetching device states:', error);
+      console.error('Error fetching stepper state:', error);
       Alert.alert('Error', 'Failed to connect to the server');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Function to update device state on the server
-  const updateDeviceState = async (device, value) => {
+  // Handle stepper motor button control
+  const handleStepperButton = async (buttonId) => {
     try {
-      const response = await fetch(`${API_URL}/api/devices/${device}`, {
+      const response = await fetch(
+        `${API_URL}/api/stepper/button/${buttonId}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Failed to process button ${buttonId}`);
+      }
+
+      const data = await response.json();
+
+      // Update local state with the new stepper settings
+      setStepper(data.stepper);
+
+      console.log(`Button ${buttonId} pressed successfully:`, data.action);
+    } catch (error) {
+      console.error(`Error pressing button ${buttonId}:`, error);
+      Alert.alert('Error', `Failed to process button ${buttonId}`);
+    }
+  };
+
+  // Function to handle custom rotation
+  const handleRotate = async (direction, degrees) => {
+    try {
+      const response = await fetch(`${API_URL}/api/stepper/rotate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ value }),
+        body: JSON.stringify({ direction, degrees }),
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to update ${device}`);
+        throw new Error('Failed to rotate stepper');
       }
 
-      // Update successful - the state is already updated locally via setState
-      console.log(`${device} updated successfully`);
+      const data = await response.json();
+      setStepper(data.stepper);
+      console.log('Rotation command sent successfully:', data.action);
     } catch (error) {
-      console.error(`Error updating ${device}:`, error);
-      Alert.alert('Error', `Failed to update ${device}`);
-
-      // Revert the local state to match the server
-      fetchDeviceStates();
+      console.error('Error rotating stepper:', error);
+      Alert.alert('Error', 'Failed to rotate stepper motor');
     }
-  };
-
-  // Toggle function for boolean devices
-  const toggleDevice = (
-    device: 'light' | 'camera' | 'speaker' | 'doorLock'
-  ) => {
-    const newValue = !devices[device];
-    setDevices((prev) => ({ ...prev, [device]: newValue }));
-    updateDeviceState(device, newValue);
-  };
-
-  // Temperature control
-  const adjustTemperature = (increment: number) => {
-    const newTemp = Math.min(30, Math.max(16, devices.thermostat + increment));
-    setDevices((prev) => ({
-      ...prev,
-      thermostat: newTemp,
-    }));
-    updateDeviceState('thermostat', newTemp);
   };
 
   return (
     <SafeAreaView style={[styles.container, isDark && styles.darkContainer]}>
       <View style={styles.header}>
         <Text style={[styles.title, isDark && styles.darkText]}>
-          My Smart Home
+          Stepper Motor Control
         </Text>
         <Text style={[styles.subtitle, isDark && styles.darkText]}>
-          {isLoading ? 'Connecting...' : '5 Active Devices'}
+          {isLoading ? 'Connecting...' : 'Motor Controller'}
         </Text>
         <TouchableOpacity
           style={styles.refreshButton}
-          onPress={fetchDeviceStates}
+          onPress={fetchStepperState}
         >
           <Ionicons name='refresh' size={24} color={isDark ? '#fff' : '#333'} />
         </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.deviceList}>
-        {/* Light Device */}
+        {/* Stepper Motor Control */}
         <View style={[styles.deviceCard, isDark && styles.darkCard]}>
           <View style={styles.deviceInfo}>
             <Ionicons
-              name={devices.light ? 'bulb' : 'bulb-outline'}
+              name={stepper.running ? 'hardware-chip' : 'hardware-chip-outline'}
               size={28}
-              color={devices.light ? '#FFD700' : isDark ? '#fff' : '#333'}
+              color={stepper.running ? '#3F51B5' : isDark ? '#fff' : '#333'}
             />
-            <Text style={[styles.deviceName, isDark && styles.darkText]}>
-              Living Room Light
-            </Text>
+            <View>
+              <Text style={[styles.deviceName, isDark && styles.darkText]}>
+                Stepper Motor
+              </Text>
+              <Text style={[styles.motorStatus, isDark && styles.darkText]}>
+                {stepper.running ? 'Running' : 'Idle'} • {stepper.direction} •
+                Rotation: {stepper.rotation}°
+              </Text>
+            </View>
           </View>
-          <Switch
-            value={devices.light}
-            onValueChange={() => toggleDevice('light')}
-            trackColor={{ false: '#767577', true: '#81b0ff' }}
-          />
-        </View>
-
-        {/* Thermostat Device */}
-        <View style={[styles.deviceCard, isDark && styles.darkCard]}>
-          <View style={styles.deviceInfo}>
-            <Ionicons
-              name='thermometer-outline'
-              size={28}
-              color={isDark ? '#fff' : '#333'}
-            />
-            <Text style={[styles.deviceName, isDark && styles.darkText]}>
-              Thermostat
-            </Text>
-          </View>
-          <View style={styles.temperatureControl}>
+          <View style={styles.buttonGroup}>
             <TouchableOpacity
-              style={styles.tempButton}
-              onPress={() => adjustTemperature(-1)}
+              style={[
+                styles.motorButton,
+                stepper.running &&
+                  stepper.rotation === 90 &&
+                  stepper.direction === 'CW' &&
+                  styles.activeButton,
+              ]}
+              onPress={() => handleStepperButton(1)}
             >
-              <Text style={styles.tempButtonText}>-</Text>
+              <Text style={styles.buttonText}>B1</Text>
+              <Text style={styles.buttonSubtext}>CW 90°</Text>
             </TouchableOpacity>
-            <Text style={[styles.tempDisplay, isDark && styles.darkText]}>
-              {devices.thermostat}°C
-            </Text>
             <TouchableOpacity
-              style={styles.tempButton}
-              onPress={() => adjustTemperature(1)}
+              style={[
+                styles.motorButton,
+                stepper.running &&
+                  stepper.rotation === 90 &&
+                  stepper.direction === 'CCW' &&
+                  styles.activeButton,
+              ]}
+              onPress={() => handleStepperButton(2)}
             >
-              <Text style={styles.tempButtonText}>+</Text>
+              <Text style={styles.buttonText}>B2</Text>
+              <Text style={styles.buttonSubtext}>CCW 90°</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.motorButton,
+                stepper.running &&
+                  stepper.rotation === 180 &&
+                  styles.activeButton,
+              ]}
+              onPress={() => handleStepperButton(3)}
+            >
+              <Text style={styles.buttonText}>B3</Text>
+              <Text style={styles.buttonSubtext}>CW 180°</Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Security Camera */}
-        <View style={[styles.deviceCard, isDark && styles.darkCard]}>
-          <View style={styles.deviceInfo}>
-            <Ionicons
-              name={devices.camera ? 'videocam' : 'videocam-outline'}
-              size={28}
-              color={devices.camera ? '#4CAF50' : isDark ? '#fff' : '#333'}
-            />
-            <Text style={[styles.deviceName, isDark && styles.darkText]}>
-              Security Camera
-            </Text>
+        {/* Status Panel */}
+        <View style={[styles.statusPanel, isDark && styles.darkCard]}>
+          <Text style={[styles.statusTitle, isDark && styles.darkText]}>
+            Motor Status
+          </Text>
+          <View style={styles.statusRow}>
+            <View style={styles.statusItem}>
+              <Text style={[styles.statusLabel, isDark && styles.darkText]}>
+                Status
+              </Text>
+              <Text
+                style={[
+                  styles.statusValue,
+                  stepper.running ? styles.statusOn : styles.statusOff,
+                ]}
+              >
+                {stepper.running ? 'RUNNING' : 'IDLE'}
+              </Text>
+            </View>
+            <View style={styles.statusItem}>
+              <Text style={[styles.statusLabel, isDark && styles.darkText]}>
+                Direction
+              </Text>
+              <Text style={[styles.statusValue, isDark && styles.darkText]}>
+                {stepper.direction}
+              </Text>
+            </View>
+            <View style={styles.statusItem}>
+              <Text style={[styles.statusLabel, isDark && styles.darkText]}>
+                Rotation
+              </Text>
+              <Text style={[styles.statusValue, isDark && styles.darkText]}>
+                {stepper.rotation}°
+              </Text>
+            </View>
           </View>
-          <Switch
-            value={devices.camera}
-            onValueChange={() => toggleDevice('camera')}
-            trackColor={{ false: '#767577', true: '#81b0ff' }}
-          />
         </View>
 
-        {/* Smart Speaker */}
-        <View style={[styles.deviceCard, isDark && styles.darkCard]}>
-          <View style={styles.deviceInfo}>
-            <Ionicons
-              name={devices.speaker ? 'volume-high' : 'volume-mute'}
-              size={28}
-              color={devices.speaker ? '#9C27B0' : isDark ? '#fff' : '#333'}
-            />
-            <Text style={[styles.deviceName, isDark && styles.darkText]}>
-              Smart Speaker
-            </Text>
+        {/* Custom Control Panel */}
+        <View style={[styles.statusPanel, isDark && styles.darkCard]}>
+          <Text style={[styles.statusTitle, isDark && styles.darkText]}>
+            Custom Rotation
+          </Text>
+          <View style={[styles.buttonGroup, { marginTop: 10 }]}>
+            <TouchableOpacity
+              style={styles.motorButton}
+              onPress={() => handleRotate('CW', 90)}
+            >
+              <Text style={styles.buttonSubtext}>CW 90°</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.motorButton}
+              onPress={() => handleRotate('CCW', 90)}
+            >
+              <Text style={styles.buttonSubtext}>CCW 90°</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.motorButton}
+              onPress={() => handleRotate('CW', 180)}
+            >
+              <Text style={styles.buttonSubtext}>CW 180°</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.motorButton}
+              onPress={() => handleRotate('CCW', 180)}
+            >
+              <Text style={styles.buttonSubtext}>CCW 180°</Text>
+            </TouchableOpacity>
           </View>
-          <Switch
-            value={devices.speaker}
-            onValueChange={() => toggleDevice('speaker')}
-            trackColor={{ false: '#767577', true: '#81b0ff' }}
-          />
-        </View>
-
-        {/* Door Lock */}
-        <View style={[styles.deviceCard, isDark && styles.darkCard]}>
-          <View style={styles.deviceInfo}>
-            <Ionicons
-              name={devices.doorLock ? 'lock-closed' : 'lock-open'}
-              size={28}
-              color={devices.doorLock ? '#FF5722' : isDark ? '#fff' : '#333'}
-            />
-            <Text style={[styles.deviceName, isDark && styles.darkText]}>
-              Front Door Lock
-            </Text>
-          </View>
-          <Switch
-            value={devices.doorLock}
-            onValueChange={() => toggleDevice('doorLock')}
-            trackColor={{ false: '#767577', true: '#81b0ff' }}
-          />
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -262,9 +292,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
-    flexDirection: 'row',
+    flexDirection: 'column',
     justifyContent: 'space-between',
-    alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
@@ -277,37 +306,82 @@ const styles = StyleSheet.create({
   deviceInfo: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 15,
   },
   deviceName: {
     marginLeft: 10,
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '500',
-  },
-  temperatureControl: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  tempButton: {
-    backgroundColor: '#e0e0e0',
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  tempButtonText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  tempDisplay: {
-    marginHorizontal: 10,
-    fontSize: 18,
-    fontWeight: 'bold',
   },
   refreshButton: {
     position: 'absolute',
     right: 20,
     top: 20,
     padding: 5,
+  },
+  motorStatus: {
+    fontSize: 12,
+    color: '#666',
+    marginLeft: 10,
+  },
+  buttonGroup: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  motorButton: {
+    backgroundColor: '#e0e0e0',
+    padding: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+    flex: 1,
+    marginHorizontal: 5,
+  },
+  activeButton: {
+    backgroundColor: '#3F51B5',
+  },
+  buttonText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  buttonSubtext: {
+    fontSize: 12,
+    marginTop: 4,
+    color: '#666',
+  },
+  statusPanel: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  },
+  statusTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 10,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 5,
+  },
+  statusItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statusLabel: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 5,
+  },
+  statusValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  statusOn: {
+    color: '#4CAF50',
+  },
+  statusOff: {
+    color: '#F44336',
   },
 });
